@@ -15,7 +15,7 @@ export default class RoleAssumingLambda extends lambda.Function {
     super(scope, id, props);
     this.props = props;
 
-    this.lambdaAssumedRole = new iam.Role(this, "AssumedRole", {
+    this.lambdaAssumedRole = new iam.Role(this, `${id}AssumingRole`, {
       assumedBy: this._getLambdaPrincipal(),
     });
 

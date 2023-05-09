@@ -4,194 +4,198 @@ import {
   aws_iam as iam,
   aws_lambda as lambda,
   aws_s3 as s3,
-  CustomResource,
   custom_resources as cr,
   RemovalPolicy,
   Stack,
 } from "aws-cdk-lib";
 import { Construct } from "constructs";
-import constants from "../lambda/constants";
-import RoleAssumingLambda from "./RoleAssumingLambda";
+
+import CrudApi from "./constructs/CrudApi";
+import TenantIsolatedDynamoDBLambda from "./constructs/TenantIsolatedDynamoDBLambda";
+
+import { createPostLambdaDir } from "../lambda/post/createPost";
+import { getPostByIdLambdaDir } from "../lambda/post/getPostById";
+import { getAllPostsLambdaDir } from "../lambda/post/getAllPosts";
+import { updatePostLambdaDir } from "../lambda/post/updatePost";
+import { deletePostLambdaDir } from "../lambda/post/deletePost";
 
 export class AwsTenantIsolationStack extends Stack {
   constructor(scope: Construct, id: string) {
     super(scope, id);
 
-    const dynamodbTable = new dynamodb.Table(this, constants.TABLE_NAME, {
-      tableName: constants.TABLE_NAME,
+    const dynamodbTable = new dynamodb.Table(this, "XYZ-TABLE", {
       partitionKey: {
-        name: constants.TABLE_PARTITION_KEY,
+        name: "partKey1",
         type: dynamodb.AttributeType.STRING,
       },
       sortKey: {
-        name: constants.TABLE_SORT_KEY,
+        name: "sortKey1",
         type: dynamodb.AttributeType.STRING,
       },
     });
     dynamodbTable.applyRemovalPolicy(RemovalPolicy.DESTROY);
-
-    const s3Bucket = new s3.Bucket(this, constants.S3_BUCKET_NAME, {
-      bucketName: constants.S3_BUCKET_NAME,
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-    });
-    s3Bucket.applyRemovalPolicy(RemovalPolicy.DESTROY);
-
-    const cfnEventHandler = new lambda.Function(
-      this,
-      constants.CFN_EVENT_HANDLER_LAMBDA_NAME,
-      {
-        functionName: constants.CFN_EVENT_HANDLER_LAMBDA_NAME,
-        runtime: lambda.Runtime.NODEJS_14_X,
-        handler: "cfnEventHandler.handler",
-        code: lambda.Code.fromAsset("lambda"),
-      }
-    );
-    dynamodbTable.grantWriteData(cfnEventHandler);
-    s3Bucket.grantWrite(cfnEventHandler);
-
-    const customResourceProvider = new cr.Provider(
-      this,
-      "DataInitializerCustomResourceProvider",
-      {
-        onEventHandler: cfnEventHandler,
-        providerFunctionName:
-          constants.CFN_EVENT_HANDLER_LAMBDA_NAME + "Provider",
-      }
-    );
-    const customResource = new CustomResource(
-      this,
-      "DataInitializerCustomResource",
-      {
-        serviceToken: customResourceProvider.serviceToken,
-      }
-    );
-
-    const readDynamoWithLeadingKeysPolicy = new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: ["dynamodb:Query"],
-      resources: [dynamodbTable.tableArn],
-      conditions: {
-        "ForAllValues:StringLike": {
-          "dynamodb:LeadingKeys": [
-            `\${aws:PrincipalTag/${constants.SESSION_TAG_KEY}}`,
-          ],
-        },
+    dynamodbTable.addGlobalSecondaryIndex({
+      indexName: "gsi1",
+      partitionKey: {
+        name: "partKey2",
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: "sortKey2",
+        type: dynamodb.AttributeType.STRING,
       },
     });
 
-    const dynamodbReadLambda = new RoleAssumingLambda(
+    // const s3Bucket = new s3.Bucket(this, constants.S3_BUCKET_NAME, {
+    //   bucketName: constants.S3_BUCKET_NAME,
+    //   blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+    // });
+    // s3Bucket.applyRemovalPolicy(RemovalPolicy.DESTROY);
+
+    const dynamodbPostCollectionSettings = {
+      tableName: dynamodbTable.tableName,
+      tableArn: dynamodbTable.tableArn,
+      allowedAttributes: [
+        "partKey1",
+        "sortKey1",
+        "postId",
+        "postTitle",
+        "postContent",
+        "partKey2",
+        "sortKey2",
+      ],
+    };
+
+    const createPostLambda = new TenantIsolatedDynamoDBLambda(
       this,
-      constants.DYNAMODB_READ_LAMBDA_NAME,
+      "CreatePostLambda",
       {
-        functionName: constants.DYNAMODB_READ_LAMBDA_NAME,
-        runtime: lambda.Runtime.NODEJS_14_X,
-        handler: "dynamodbReader.handler",
-        code: lambda.Code.fromAsset("lambda"),
-        assumedRolePolicyStatements: [readDynamoWithLeadingKeysPolicy],
-        assumedRoleArnEnvKey: constants.ASSUMED_ROLE_ARN_ENV_KEY_1,
-        sessionTag: constants.TABLE_PARTITION_KEY,
+        lambdaDirectory: createPostLambdaDir,
+        assumedRoleArnEnvKey: "CREATE_POST_ROLE",
+        dynamodbSettings: {
+          ...dynamodbPostCollectionSettings,
+          action: "dynamodb:PutItem",
+        },
+        tenantIdentifier: "userId",
+        getPartitionKeyPattern: (tenantIdentifierSessionTag) =>
+          `user/${tenantIdentifierSessionTag}`,
       }
     );
 
-    const writeDynamoWithLeadingKeysPolicy = new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: ["dynamodb:PutItem"],
-      resources: [dynamodbTable.tableArn],
-      conditions: {
-        "ForAllValues:StringLike": {
-          "dynamodb:LeadingKeys": [
-            `\${aws:PrincipalTag/${constants.SESSION_TAG_KEY}}`,
-          ],
+    const getPostByIdLambda = new TenantIsolatedDynamoDBLambda(
+      this,
+      "GetPostByIdLambda",
+      {
+        lambdaDirectory: getPostByIdLambdaDir,
+        assumedRoleArnEnvKey: "GET_POST_BY_ID_ROLE",
+        dynamodbSettings: {
+          ...dynamodbPostCollectionSettings,
+          action: "dynamodb:GetItem",
         },
+        tenantIdentifier: "userId",
+        getPartitionKeyPattern: (tenantIdentifierSessionTag) =>
+          `user/${tenantIdentifierSessionTag}`,
+      }
+    );
+
+    const getAllPostsLambda = new TenantIsolatedDynamoDBLambda(
+      this,
+      "GetAllPostsLambda",
+      {
+        lambdaDirectory: getAllPostsLambdaDir,
+        assumedRoleArnEnvKey: "GET_ALL_POSTS_ROLE",
+        dynamodbSettings: {
+          ...dynamodbPostCollectionSettings,
+          action: "dynamodb:Query",
+        },
+        tenantIdentifier: "userId",
+        getPartitionKeyPattern: (tenantIdentifierSessionTag) =>
+          `user/${tenantIdentifierSessionTag}`,
+      }
+    );
+
+    const updatePostLambda = new TenantIsolatedDynamoDBLambda(
+      this,
+      "UpdatePostLambda",
+      {
+        lambdaDirectory: updatePostLambdaDir,
+        assumedRoleArnEnvKey: "UPDATE_POST_ROLE",
+        dynamodbSettings: {
+          ...dynamodbPostCollectionSettings,
+          action: "dynamodb:UpdateItem",
+        },
+        tenantIdentifier: "userId",
+        getPartitionKeyPattern: (tenantIdentifierSessionTag) =>
+          `user/${tenantIdentifierSessionTag}`,
+      }
+    );
+
+    const deletePostLambda = new TenantIsolatedDynamoDBLambda(
+      this,
+      "DeletePostLambda",
+      {
+        lambdaDirectory: deletePostLambdaDir,
+        assumedRoleArnEnvKey: "DELETE_POST_ROLE",
+        dynamodbSettings: {
+          ...dynamodbPostCollectionSettings,
+          action: "dynamodb:DeleteItem",
+        },
+        tenantIdentifier: "userId",
+        getPartitionKeyPattern: (tenantIdentifierSessionTag) =>
+          `user/${tenantIdentifierSessionTag}`,
+      }
+    );
+
+    const crudApi = new CrudApi(this, "XYZ-API", {});
+    crudApi.createCrud({
+      endpointNoun: {
+        singular: "post",
+        plural: "posts",
+      },
+      integrations: {
+        getAll: getAllPostsLambda,
+        post: createPostLambda,
       },
     });
 
-    const dynamodbWriteLambda = new RoleAssumingLambda(
-      this,
-      constants.DYNAMODB_WRITE_LAMBDA_NAME,
-      {
-        functionName: constants.DYNAMODB_WRITE_LAMBDA_NAME,
-        runtime: lambda.Runtime.NODEJS_14_X,
-        handler: "dynamodbWriter.handler",
-        code: lambda.Code.fromAsset("lambda"),
-        assumedRolePolicyStatements: [writeDynamoWithLeadingKeysPolicy],
-        assumedRoleArnEnvKey: constants.ASSUMED_ROLE_ARN_ENV_KEY_3,
-        sessionTag: constants.TABLE_PARTITION_KEY,
-      }
-    );
-
-    const getBucketObjectWithPrefix = new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: ["s3:ListBucket"],
-      resources: [s3Bucket.bucketArn],
-      conditions: {
-        StringEquals: {
-          "s3:prefix": `\${aws:PrincipalTag/${constants.SESSION_TAG_KEY}}`,
-        },
+    crudApi.createCrud({
+      endpointNoun: {
+        singular: "{postId}",
       },
-    });
-
-    const s3BucketReadLambda = new RoleAssumingLambda(
-      this,
-      constants.S3_BUCKET_READ_LAMBDA_NAME,
-      {
-        functionName: constants.S3_BUCKET_READ_LAMBDA_NAME,
-        runtime: lambda.Runtime.NODEJS_14_X,
-        handler: "s3BucketReader.handler",
-        code: lambda.Code.fromAsset("lambda"),
-        assumedRolePolicyStatements: [getBucketObjectWithPrefix],
-        assumedRoleArnEnvKey: constants.ASSUMED_ROLE_ARN_ENV_KEY_2,
-        sessionTag: constants.S3_BUCKET_NAME,
-      }
-    );
-
-    const putBucketObjectWithPrefix = new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: ["s3:PutObject"],
-      resources: [s3Bucket.bucketArn],
-      conditions: {
-        StringEquals: {
-          "s3:prefix": `\${aws:PrincipalTag/${constants.SESSION_TAG_KEY}}`,
-        },
+      integrations: {
+        get: getPostByIdLambda,
+        put: updatePostLambda,
+        delete: deletePostLambda,
       },
+      pickResource: (root) => root.getResource("post"),
     });
 
-    const s3BucketWriteLambda = new RoleAssumingLambda(
-      this,
-      constants.S3_BUCKET_WRITE_LAMBDA_NAME,
-      {
-        functionName: constants.S3_BUCKET_WRITE_LAMBDA_NAME,
-        runtime: lambda.Runtime.NODEJS_14_X,
-        handler: "s3BucketWriter.handler",
-        code: lambda.Code.fromAsset("lambda"),
-        assumedRolePolicyStatements: [putBucketObjectWithPrefix],
-        assumedRoleArnEnvKey: constants.ASSUMED_ROLE_ARN_ENV_KEY_4,
-        sessionTag: constants.S3_BUCKET_NAME,
-      }
-    );
+    // crudApi.createCrud({
+    //   endpointNoun: {
+    //     singular: "comment",
+    //     plural: "comments",
+    //   },
+    //   integrations: {
+    //     // getAll: ,
+    //     // post: ,
+    //   },
+    //   pickResource: (root) => root.getResource("post")?.getResource("{postId}"),
+    // });
 
-    const api = new apiGateway.RestApi(this, `${this.stackName}API`, {
-      restApiName: `${this.stackName}API`,
-    });
-
-    api.root.addResource("readDynamodb");
-    api.root
-      .getResource("readDynamodb")
-      ?.addMethod("GET", new apiGateway.LambdaIntegration(dynamodbReadLambda));
-
-    api.root.addResource("writeDynamodb");
-    api.root
-      .getResource("writeDynamodb")
-      ?.addMethod("GET", new apiGateway.LambdaIntegration(dynamodbWriteLambda));
-
-    api.root.addResource("readS3Bucket");
-    api.root
-      .getResource("readS3Bucket")
-      ?.addMethod("GET", new apiGateway.LambdaIntegration(s3BucketReadLambda));
-
-    api.root.addResource("writeS3Bucket");
-    api.root
-      .getResource("writeS3Bucket")
-      ?.addMethod("GET", new apiGateway.LambdaIntegration(s3BucketWriteLambda));
+    // crudApi.createCrud({
+    //   endpointNoun: {
+    //     singular: "{commentId}",
+    //   },
+    //   integrations: {
+    //     // get: ,
+    //     // put: ,
+    //     // delete: ,
+    //   },
+    //   pickResource: (root) =>
+    //     root
+    //       .getResource("post")
+    //       ?.getResource("{postId}")
+    //       ?.getResource("comment"),
+    // });
   }
 }
