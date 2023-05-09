@@ -158,17 +158,17 @@ export class AwsTenantIsolationStack extends Stack {
       },
     });
 
-    crudApi.createCrud({
-      endpointNoun: {
-        singular: "{postId}",
-      },
-      integrations: {
-        get: getPostByIdLambda,
-        put: updatePostLambda,
-        delete: deletePostLambda,
-      },
-      pickResource: (root) => root.getResource("post"),
-    });
+    // crudApi.createCrud({
+    //   endpointNoun: {
+    //     singular: "{postId}",
+    //   },
+    //   integrations: {
+    //     get: getPostByIdLambda,
+    //     put: updatePostLambda,
+    //     delete: deletePostLambda,
+    //   },
+    //   pickResource: (root) => root.getResource("post"),
+    // });
 
     // crudApi.createCrud({
     //   endpointNoun: {

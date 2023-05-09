@@ -6,7 +6,7 @@ import {
 import { AssumeRoleCommand, STSClient } from "@aws-sdk/client-sts";
 import {
   DynamoDBDocumentClient,
-  PutCommand,
+  QueryCommand,
   TranslateConfig,
 } from "@aws-sdk/lib-dynamodb";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
@@ -26,7 +26,9 @@ export const handler = async (
 
     const {
       auth: { userId },
-      data,
+      keyConditionExpression,
+      expressionAttributeNames,
+      expressionAttributeValues,
     } = JSON.parse(event.body!);
 
     const sts = new STSClient({});
@@ -67,10 +69,12 @@ export const handler = async (
     );
 
     const result = await dynamoDb.send(
-      new PutCommand({
+      new QueryCommand({
         TableName: dynamodbTableName,
-        Item: data,
-        ConditionExpression: `attribute_not_exists(partKey1)`,
+        IndexName: "gsi1",
+        KeyConditionExpression: keyConditionExpression,
+        ExpressionAttributeNames: expressionAttributeNames,
+        ExpressionAttributeValues: expressionAttributeValues,
       })
     );
 

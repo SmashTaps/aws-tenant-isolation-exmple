@@ -25,12 +25,10 @@ export interface CreateCrudProps {
 
 export default class CrudApi extends apiGateway.RestApi {
   private props: CrudApiProps;
-  public readonly restApi: apiGateway.RestApi;
 
   constructor(scope: Construct, id: string, props: CrudApiProps) {
     super(scope, id, props);
     this.props = props;
-    this.restApi = new apiGateway.RestApi(scope, "CrudAPI");
   }
 
   public createCrud(props: CreateCrudProps): {
@@ -38,18 +36,19 @@ export default class CrudApi extends apiGateway.RestApi {
     pluralResource: apiGateway.IResource | undefined;
   } {
     let resource: apiGateway.IResource;
-    if (props.pickResource && props.pickResource(this.restApi.root)) {
-      resource = props.pickResource(this.restApi.root)!;
+    if (props.pickResource && props.pickResource(this.root)) {
+      resource = props.pickResource(this.root)!;
     } else {
-      resource = this.restApi.root;
+      resource = this.root;
     }
 
-    let singularResource = resource.getResource(props.endpointNoun.singular);
+    let singularResource: apiGateway.IResource | undefined =
+      resource.getResource(props.endpointNoun.singular);
     if (!singularResource) {
       singularResource = resource.addResource(props.endpointNoun.singular);
     }
 
-    let pluralResource;
+    let pluralResource: apiGateway.IResource | undefined;
     if (props.endpointNoun.plural) {
       pluralResource = resource.getResource(props.endpointNoun.plural);
       if (!pluralResource) {
@@ -64,39 +63,34 @@ export default class CrudApi extends apiGateway.RestApi {
     }
 
     this._initResource({
-      resource,
+      resource: singularResource,
       method: "GET",
-      resourceName: props.endpointNoun.singular,
       integration: props.integrations.get,
     });
 
     if (props.endpointNoun.plural) {
       this._initResource({
-        resource,
+        resource: pluralResource!,
         method: "GET",
-        resourceName: props.endpointNoun.plural,
         integration: props.integrations.getAll,
       });
     }
 
     this._initResource({
-      resource,
+      resource: singularResource,
       method: "PUT",
-      resourceName: props.endpointNoun.singular,
       integration: props.integrations.put,
     });
 
     this._initResource({
-      resource,
+      resource: singularResource,
       method: "POST",
-      resourceName: props.endpointNoun.singular,
       integration: props.integrations.post,
     });
 
     this._initResource({
-      resource,
+      resource: singularResource,
       method: "DELETE",
-      resourceName: props.endpointNoun.singular,
       integration: props.integrations.delete,
     });
 
@@ -105,20 +99,20 @@ export default class CrudApi extends apiGateway.RestApi {
 
   private _initResource(props: {
     resource: apiGateway.IResource;
-    resourceName: string;
     method: string;
     integration?: lambda.Function;
   }) {
     if (props.integration) {
-      const resource = props.resource.getResource(props.resourceName)!;
+      console.log("\n\n 😓 😓 😓 \n\n");
+
       if (this.props.authorizer) {
-        resource.addMethod(
+        props.resource.addMethod(
           props.method,
           new apiGateway.LambdaIntegration(props.integration),
           { authorizer: this.props.authorizer }
         );
       } else {
-        resource.addMethod(
+        props.resource.addMethod(
           props.method,
           new apiGateway.LambdaIntegration(props.integration)
         );
