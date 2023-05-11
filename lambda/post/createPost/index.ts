@@ -24,10 +24,10 @@ export const handler = async (
     const assumedRoleARN = process.env.CREATE_POST_ROLE;
     const dynamodbTableName = process.env.DYNAMODB_TABLE_NAME;
 
-    const {
-      auth: { userId },
-      data,
-    } = JSON.parse(event.body!);
+    const { authorization } = event.headers;
+    const userId = authorization!.split(" ")[1];
+
+    const { data } = JSON.parse(event.body!);
 
     const sts = new STSClient({});
     const session = await sts.send(

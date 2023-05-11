@@ -7,6 +7,7 @@ import {
   custom_resources as cr,
   RemovalPolicy,
   Stack,
+  aws_cognito as cognito,
 } from "aws-cdk-lib";
 import { Construct } from "constructs";
 
@@ -18,6 +19,8 @@ import { getPostByIdLambdaDir } from "../lambda/post/getPostById";
 import { getAllPostsLambdaDir } from "../lambda/post/getAllPosts";
 import { updatePostLambdaDir } from "../lambda/post/updatePost";
 import { deletePostLambdaDir } from "../lambda/post/deletePost";
+import { LambdaIntegration } from "aws-cdk-lib/aws-apigateway";
+import { AccountRecovery } from "aws-cdk-lib/aws-cognito";
 
 export class AwsTenantIsolationStack extends Stack {
   constructor(scope: Construct, id: string) {
@@ -51,6 +54,18 @@ export class AwsTenantIsolationStack extends Stack {
     //   blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
     // });
     // s3Bucket.applyRemovalPolicy(RemovalPolicy.DESTROY);
+
+    const auth = new cognito.UserPool(this, "XYZ-Auth", {
+      accountRecovery: AccountRecovery.EMAIL_ONLY,
+      selfSignUpEnabled: true,
+      // signInAliases: {
+      //   email: true,
+      // },
+    });
+    const authClient = new cognito.UserPoolClient(this, "XYZ-Auth-client", {
+      userPool: auth,
+      authFlows: { userPassword: true },
+    });
 
     const dynamodbPostCollectionSettings = {
       tableName: dynamodbTable.tableName,
@@ -147,6 +162,12 @@ export class AwsTenantIsolationStack extends Stack {
     );
 
     const crudApi = new CrudApi(this, "XYZ-API", {});
+    crudApi.root.addMethod("POST", new LambdaIntegration(deletePostLambda), {
+      authorizer: new apiGateway.CognitoUserPoolsAuthorizer(this, "CUA", {
+        cognitoUserPools: [auth],
+      }),
+    });
+
     crudApi.createCrud({
       endpointNoun: {
         singular: "post",

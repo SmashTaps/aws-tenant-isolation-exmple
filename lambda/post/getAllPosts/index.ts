@@ -24,12 +24,10 @@ export const handler = async (
     const assumedRoleARN = process.env.CREATE_POST_ROLE;
     const dynamodbTableName = process.env.DYNAMODB_TABLE_NAME;
 
-    const {
-      auth: { userId },
-      keyConditionExpression,
-      expressionAttributeNames,
-      expressionAttributeValues,
-    } = JSON.parse(event.body!);
+    const { Authorization } = event.headers;
+    const userId = Authorization!.split(" ")[1];
+
+    const { ownerId } = event.queryStringParameters!;
 
     const sts = new STSClient({});
     const session = await sts.send(
@@ -72,9 +70,15 @@ export const handler = async (
       new QueryCommand({
         TableName: dynamodbTableName,
         IndexName: "gsi1",
-        KeyConditionExpression: keyConditionExpression,
-        ExpressionAttributeNames: expressionAttributeNames,
-        ExpressionAttributeValues: expressionAttributeValues,
+        KeyConditionExpression: "#pk2 = :pk2v AND #sk2 = :sk2v",
+        ExpressionAttributeNames: {
+          "#pk2": "partKey2",
+          "#sk2": "sortKey2",
+        },
+        ExpressionAttributeValues: {
+          ":pk2v": `user/${ownerId}`,
+          ":sk2v": "post",
+        },
       })
     );
 
@@ -84,7 +88,10 @@ export const handler = async (
 
     return {
       statusCode: 403,
-      body: JSON.stringify({ error: (error as Error).message }),
+      body: JSON.stringify({
+        error: (error as Error).message,
+        h: event.headers,
+      }),
     };
   }
 };
