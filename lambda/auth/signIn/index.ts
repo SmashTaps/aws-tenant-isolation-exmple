@@ -5,10 +5,10 @@ import {
 } from "aws-lambda";
 import {
   CognitoIdentityProviderClient,
-  ResendConfirmationCodeCommand,
+  InitiateAuthCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
-export const requestEmailVerificationLambdaDir = __dirname;
+export const signInLambdaDir = __dirname;
 
 export const handler = async (
   event: APIGatewayProxyEvent,
@@ -23,13 +23,17 @@ export const handler = async (
     const userPoolClientId = process.env.USER_POOL_CLIENT_ID;
 
     const {
-      data: { email },
+      data: { email, password },
     } = JSON.parse(event.body!);
 
     const result = await client.send(
-      new ResendConfirmationCodeCommand({
+      new InitiateAuthCommand({
+        AuthFlow: "USER_PASSWORD_AUTH",
         ClientId: userPoolClientId,
-        Username: email,
+        AuthParameters: {
+          USERNAME: email,
+          PASSWORD: password,
+        },
       })
     );
 

@@ -97,6 +97,16 @@ export class AwsTenantIsolationStack extends Stack {
       "cognito-idp:AdminAddUserToGroup"
     );
 
+    const userSignInLambda = new lambda.Function(this, "SignInLambda", {
+      code: lambda.Code.fromAsset(signUpLambdaDir),
+      handler: "index.handler",
+      runtime: lambda.Runtime.NODEJS_16_X,
+      environment: {
+        USER_POOL_CLIENT_ID: authClient.userPoolClientId,
+      },
+    });
+    auth.grant(userSignInLambda, "cognito:InitiateAuth");
+
     const userVerifyEmailLambda = new lambda.Function(
       this,
       "VerifyEmailLambda",
@@ -232,6 +242,10 @@ export class AwsTenantIsolationStack extends Stack {
     authResource
       .addResource("signUp")
       .addMethod("POST", new apiGateway.LambdaIntegration(userSignUpLambda));
+
+    authResource
+      .addResource("signIn")
+      .addMethod("POST", new apiGateway.LambdaIntegration(userSignInLambda));
 
     authResource
       .addResource("verifyEmail")
