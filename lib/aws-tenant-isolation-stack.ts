@@ -26,6 +26,7 @@ import { verifyEmailLambdaDir } from "../lambda/auth/verifyEmail";
 import { requestEmailVerificationLambdaDir } from "../lambda/auth/requestEmailVerification";
 import { signInLambdaDir } from "../lambda/auth/signIn";
 import { refreshTokenLambdaDir } from "../lambda/auth/refreshToken";
+import { postConfirmationLambdaDir } from "../lambda/auth/postConfirmation";
 
 export class AwsTenantIsolationStack extends Stack {
   constructor(scope: Construct, id: string) {
@@ -60,11 +61,41 @@ export class AwsTenantIsolationStack extends Stack {
     // });
     // s3Bucket.applyRemovalPolicy(RemovalPolicy.DESTROY);
 
+    const dynamodbUserCollectionSettings = {
+      tableName: dynamodbTable.tableName,
+      tableArn: dynamodbTable.tableArn,
+      allowedAttributes: [
+        "partKey1",
+        "sortKey1",
+        "userId",
+        "email",
+        "userGroup",
+        "partKey2",
+        "sortKey2",
+      ],
+    };
+
+    const userPostConfirmationLambda = new TenantIsolatedDynamoDBLambda(
+      this,
+      "PostConfirmationLambda",
+      {
+        lambdaDirectory: postConfirmationLambdaDir,
+        assumedRoleArnEnvKey: "USER_POST_CONFIRMATION_ROLE",
+        dynamodbSettings: {
+          ...dynamodbUserCollectionSettings,
+          action: "dynamodb:PutItem",
+        },
+        tenantIdentifier: "companyId",
+        getPartitionKeyPattern: (companyId) => `comp/${companyId}`,
+      }
+    );
+
     const auth = new cognito.UserPool(this, "XYZ-Auth", {
       accountRecovery: AccountRecovery.EMAIL_ONLY,
       selfSignUpEnabled: true,
       autoVerify: { email: true },
       signInAliases: { email: true },
+      lambdaTriggers: { postConfirmation: userPostConfirmationLambda },
     });
     const authClient = new cognito.UserPoolClient(this, "XYZ-Auth-client", {
       userPool: auth,

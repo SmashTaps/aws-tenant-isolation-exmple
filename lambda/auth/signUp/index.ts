@@ -5,7 +5,8 @@ import {
 } from "aws-lambda";
 import {
   CognitoIdentityProviderClient,
-  ConfirmSignUpCommand,
+  SignUpCommand,
+  AdminAddUserToGroupCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
 export const signUpLambdaDir = __dirname;
@@ -20,23 +21,32 @@ export const handler = async (
   try {
     const client = new CognitoIdentityProviderClient({});
 
+    const userPoolId = process.env.USER_POOL_ID;
     const userPoolClientId = process.env.USER_POOL_CLIENT_ID;
 
     const {
-      data: { email, verificationCode },
+      data: { email, password },
     } = JSON.parse(event.body!);
 
-    const result = await client.send(
-      new ConfirmSignUpCommand({
+    const signUpResult = await client.send(
+      new SignUpCommand({
         ClientId: userPoolClientId,
         Username: email,
-        ConfirmationCode: verificationCode,
+        Password: password,
+      })
+    );
+
+    const userGroupingResult = await client.send(
+      new AdminAddUserToGroupCommand({
+        UserPoolId: userPoolId,
+        Username: email,
+        GroupName: "admin",
       })
     );
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ ...result }),
+      body: JSON.stringify({ ...signUpResult, ...userGroupingResult }),
     };
   } catch (error) {
     console.error((error as Error).message);
