@@ -24,6 +24,8 @@ import { AccountRecovery, CfnUserPoolGroup } from "aws-cdk-lib/aws-cognito";
 import { signUpLambdaDir } from "../lambda/auth/signUp";
 import { verifyEmailLambdaDir } from "../lambda/auth/verifyEmail";
 import { requestEmailVerificationLambdaDir } from "../lambda/auth/requestEmailVerification";
+import { signInLambdaDir } from "../lambda/auth/signIn";
+import { refreshTokenLambdaDir } from "../lambda/auth/refreshToken";
 
 export class AwsTenantIsolationStack extends Stack {
   constructor(scope: Construct, id: string) {
@@ -98,7 +100,7 @@ export class AwsTenantIsolationStack extends Stack {
     );
 
     const userSignInLambda = new lambda.Function(this, "SignInLambda", {
-      code: lambda.Code.fromAsset(signUpLambdaDir),
+      code: lambda.Code.fromAsset(signInLambdaDir),
       handler: "index.handler",
       runtime: lambda.Runtime.NODEJS_16_X,
       environment: {
@@ -106,6 +108,16 @@ export class AwsTenantIsolationStack extends Stack {
       },
     });
     auth.grant(userSignInLambda, "cognito:InitiateAuth");
+
+    const refreshTokenLambda = new lambda.Function(this, "RefreshTokenLambda", {
+      code: lambda.Code.fromAsset(refreshTokenLambdaDir),
+      handler: "index.handler",
+      runtime: lambda.Runtime.NODEJS_16_X,
+      environment: {
+        USER_POOL_CLIENT_ID: authClient.userPoolClientId,
+      },
+    });
+    auth.grant(refreshTokenLambda, "cognito:InitiateAuth");
 
     const userVerifyEmailLambda = new lambda.Function(
       this,
@@ -260,6 +272,10 @@ export class AwsTenantIsolationStack extends Stack {
         "POST",
         new apiGateway.LambdaIntegration(userRequestEmailVerificationLambda)
       );
+
+    authResource
+      .addResource("refreshToken")
+      .addMethod("POST", new apiGateway.LambdaIntegration(refreshTokenLambda));
 
     crudApi.createCrud({
       endpointNoun: {
