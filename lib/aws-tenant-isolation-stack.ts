@@ -20,7 +20,10 @@ import { getAllPostsLambdaDir } from "../lambda/post/getAllPosts";
 import { updatePostLambdaDir } from "../lambda/post/updatePost";
 import { deletePostLambdaDir } from "../lambda/post/deletePost";
 import { LambdaIntegration } from "aws-cdk-lib/aws-apigateway";
-import { AccountRecovery } from "aws-cdk-lib/aws-cognito";
+import { AccountRecovery, CfnUserPoolGroup } from "aws-cdk-lib/aws-cognito";
+import { signUpLambdaDir } from "../lambda/auth/signUp";
+import { verifyEmailLambdaDir } from "../lambda/auth/verifyEmail";
+import { requestEmailVerificationLambdaDir } from "../lambda/auth/requestEmailVerification";
 
 export class AwsTenantIsolationStack extends Stack {
   constructor(scope: Construct, id: string) {
@@ -58,14 +61,72 @@ export class AwsTenantIsolationStack extends Stack {
     const auth = new cognito.UserPool(this, "XYZ-Auth", {
       accountRecovery: AccountRecovery.EMAIL_ONLY,
       selfSignUpEnabled: true,
-      // signInAliases: {
-      //   email: true,
-      // },
+      autoVerify: { email: true },
+      signInAliases: { email: true },
     });
     const authClient = new cognito.UserPoolClient(this, "XYZ-Auth-client", {
       userPool: auth,
       authFlows: { userPassword: true },
     });
+
+    const adminUserGroup = new CfnUserPoolGroup(this, "AdminUserGroup", {
+      userPoolId: auth.userPoolId,
+      groupName: "admin",
+    });
+    const employeeUserGroup = new CfnUserPoolGroup(this, "EmployeeUserGroup", {
+      userPoolId: auth.userPoolId,
+      groupName: "employee",
+    });
+    const hrUserGroup = new CfnUserPoolGroup(this, "HRUserGroup", {
+      userPoolId: auth.userPoolId,
+      groupName: "hr",
+    });
+
+    const userSignUpLambda = new lambda.Function(this, "SignUpLambda", {
+      code: lambda.Code.fromAsset(signUpLambdaDir),
+      handler: "index.handler",
+      runtime: lambda.Runtime.NODEJS_16_X,
+      environment: {
+        USER_POOL_ID: auth.userPoolId,
+        USER_POOL_CLIENT_ID: authClient.userPoolClientId,
+      },
+    });
+    auth.grant(
+      userSignUpLambda,
+      "cognito:SignUp",
+      "cognito-idp:AdminAddUserToGroup"
+    );
+
+    const userVerifyEmailLambda = new lambda.Function(
+      this,
+      "VerifyEmailLambda",
+      {
+        code: lambda.Code.fromAsset(verifyEmailLambdaDir),
+        handler: "index.handler",
+        runtime: lambda.Runtime.NODEJS_16_X,
+        environment: {
+          USER_POOL_CLIENT_ID: authClient.userPoolClientId,
+        },
+      }
+    );
+    auth.grant(userVerifyEmailLambda, "cognito:ConfirmSignUpCommand");
+
+    const userRequestEmailVerificationLambda = new lambda.Function(
+      this,
+      "RequestEmailVerificationLambda",
+      {
+        code: lambda.Code.fromAsset(requestEmailVerificationLambdaDir),
+        handler: "index.handler",
+        runtime: lambda.Runtime.NODEJS_16_X,
+        environment: {
+          USER_POOL_CLIENT_ID: authClient.userPoolClientId,
+        },
+      }
+    );
+    auth.grant(
+      userRequestEmailVerificationLambda,
+      "cognito:ResendConfirmationCode"
+    );
 
     const dynamodbPostCollectionSettings = {
       tableName: dynamodbTable.tableName,
@@ -161,12 +222,30 @@ export class AwsTenantIsolationStack extends Stack {
       }
     );
 
-    const crudApi = new CrudApi(this, "XYZ-API", {});
-    crudApi.root.addMethod("POST", new LambdaIntegration(deletePostLambda), {
+    const crudApi = new CrudApi(this, "XYZ-API", {
       authorizer: new apiGateway.CognitoUserPoolsAuthorizer(this, "CUA", {
         cognitoUserPools: [auth],
       }),
     });
+
+    const authResource = crudApi.root.addResource("auth");
+    authResource
+      .addResource("signUp")
+      .addMethod("POST", new apiGateway.LambdaIntegration(userSignUpLambda));
+
+    authResource
+      .addResource("verifyEmail")
+      .addMethod(
+        "POST",
+        new apiGateway.LambdaIntegration(userVerifyEmailLambda)
+      );
+
+    authResource
+      .addResource("requestEmailVerification")
+      .addMethod(
+        "POST",
+        new apiGateway.LambdaIntegration(userRequestEmailVerificationLambda)
+      );
 
     crudApi.createCrud({
       endpointNoun: {

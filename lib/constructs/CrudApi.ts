@@ -103,8 +103,6 @@ export default class CrudApi extends apiGateway.RestApi {
     integration?: lambda.Function;
   }) {
     if (props.integration) {
-      console.log("\n\n 😓 😓 😓 \n\n");
-
       if (this.props.authorizer) {
         props.resource.addMethod(
           props.method,

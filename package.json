@@ -9,10 +9,11 @@
     "watch": "tsc -w",
     "test": "jest",
     "cdk": "cdk",
-    "deploy": "npm run build && cdk deploy AwsTenantIsolationStack-thedath --outputs-file output.json --verbose"
+    "deploy": "npm run build && cdk deploy AwsTenantIsolationStack-thedath --outputs-file output.json --verbose",
+    "destroy": "cdk destroy AwsTenantIsolationStack-thedath --verbose"
   },
   "devDependencies": {
-    "@aws-sdk/client-cognito-identity-provider": "^3.329.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.332.0",
     "@types/aws-lambda": "^8.10.109",
     "@types/jest": "^29.2.4",
     "@types/node": "18.11.15",
